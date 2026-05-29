@@ -3,6 +3,7 @@ use axum::{
     extract::{State, Path},
     routing::{get, post},
     serve,
+    response::Redirect,
 };
 use serde::Deserialize;
 use std::collections::HashMap;
@@ -35,12 +36,12 @@ async fn main() {
     serve(listener, app).await.unwrap();
 }
 
-async fn redirect(State(db) : State<DB>, Path(id) : Path<String>) -> String {
+async fn redirect(State(db) : State<DB>, Path(id) : Path<String>) -> Redirect {
     let map = db.lock().unwrap();
     if let Some(link) = map.get(&id) {
-        format!("Return Link : {}", link)
+        Redirect::to(link)
     } else{
-        "NO ID Founded".to_string()
+        Redirect::to("http://127.0.0.1:3000")
     }
 }
 
@@ -50,7 +51,7 @@ async fn shorten(State(db): State<DB>, Json(body): Json<Request>) -> String {
     let mut map = db.lock().unwrap();
     map.insert(id.clone(), body.url.clone());
 
-    format!("Short Link : https://127.0.0.1:3000/{}", id)
+    format!("Short Link : http://127.0.0.1:3000/{}", id)
 }
 
 // curl -X POST http://127.0.0.1:3000/shorten -H "Content-Type: application/json" -d "{\"url\":\"https://youtube.com\"}"
