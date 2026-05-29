@@ -1,14 +1,15 @@
 use axum::{
     Json, Router,
-    extract::{State, Path},
+    extract::{Path, State},
+    response::Redirect,
     routing::{get, post},
     serve,
-    response::Redirect,
 };
 use serde::Deserialize;
 use std::collections::HashMap;
-use std::sync::{Arc, Mutex};
+use std::sync::{Arc, Mutex, MutexGuard};
 use tokio::net::TcpListener;
+use url::Url;
 
 #[derive(Deserialize)]
 struct Request {
@@ -36,39 +37,57 @@ async fn main() {
     serve(listener, app).await.unwrap();
 }
 
-async fn redirect(State(db) : State<DB>, Path(id) : Path<String>) -> Redirect {
+async fn redirect(State(db): State<DB>, Path(id): Path<String>) -> Redirect {
     let map = db.lock().unwrap();
     if let Some(link) = map.get(&id) {
         Redirect::to(link)
-    } else{
+    } else {
         Redirect::to("http://127.0.0.1:3000")
     }
 }
 
 async fn shorten(State(db): State<DB>, Json(body): Json<Request>) -> String {
-    let id = nanoid::nanoid!(6);
+    if body.url.is_empty() {
+        "Empty URL Founded".to_string()
+    } else if !is_valid_url(&body.url) {
+        "Invalid URL Link".to_string()
+    } else {
+        let mut id: String = String::new();
+        let mut map = db.lock().unwrap();
 
-    let mut map = db.lock().unwrap();
-    map.insert(id.clone(), body.url.clone());
+        //New Link
+        if !dup_url(&mut map, &mut id, &body.url) {
+            id = nanoid::nanoid!(6);
+            map.insert(id.clone(), body.url.clone());
+        }
 
-    format!("Short Link : http://127.0.0.1:3000/{}", id)
+        format!("Short Link : http://127.0.0.1:3000/{}", id)
+    }
+}
+
+//Helper methods
+fn dup_url(map: &mut MutexGuard<HashMap<String, String>>, id: &mut String, url: &String) -> bool {
+    for (key, value) in map.iter() {
+        if url == value {
+            *id = key.to_string();
+            return true;
+        }
+    }
+    return false;
+}
+
+fn is_valid_url(url: &String) -> bool {
+    match Url::parse(url) {
+        Ok(_) => true,
+        Err(_) => false,
+    }
 }
 
 // curl -X POST http://127.0.0.1:3000/shorten -H "Content-Type: application/json" -d "{\"url\":\"https://youtube.com\"}"
 // curl -L http://127.0.0.1:3000/aB92xQ
-
 
 // curl               → send request tool
 // -X POST            → use POST method
 // /shorten           → your Rust route
 // -H JSON header     → tells server you're sending JSON
 // -d data            → actual body (your URL)
-
-// --- Plan ---
-//1. Send URL link
-//2. Generate a ID that unique to that URL
-//3. Store it with that ID
-//4. Return the shortener link
-
-//Add a clickable for that new link
-//Maps to that correct URL Link
