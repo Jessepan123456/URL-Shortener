@@ -1,23 +1,31 @@
 use axum::{
     Json, Router,
+    extract::{State, Path},
     routing::{get, post},
     serve,
 };
 use serde::Deserialize;
 use std::collections::HashMap;
+use std::sync::{Arc, Mutex};
 use tokio::net::TcpListener;
-
 
 #[derive(Deserialize)]
 struct Request {
     url: String,
 }
 
+type DB = Arc<Mutex<HashMap<String, String>>>;
+
 #[tokio::main]
 async fn main() {
     //Makes the website server
+    //Our Server Hashmap
+    let db: DB = Arc::new(Mutex::new(HashMap::new()));
+
     let app = Router::new()
-        .route("/", get(rust_page));
+        .route("/:id", get(redirect))
+        .route("/shorten", post(shorten))
+        .with_state(db);
 
     //Listen for what server it makes
     let listener = TcpListener::bind("127.0.0.1:3000").await.unwrap();
@@ -27,31 +35,33 @@ async fn main() {
     serve(listener, app).await.unwrap();
 }
 
-async fn rust_page() -> String {
-    let mut url_id: HashMap<String, String> = HashMap::new();
-    let id = nanoid::nanoid!(6);
-
-    url_id.insert(id.clone(), "https//youtube.com".to_string());
-
-    match url_id.get(&id) {
-        Some(url) => url.clone(),
-        None => "No URL found".to_string(),
+async fn redirect(State(db) : State<DB>, Path(id) : Path<String>) -> String {
+    let map = db.lock().unwrap();
+    if let Some(link) = map.get(&id) {
+        format!("Return Link : {}", link)
+    } else{
+        "NO ID Founded".to_string()
     }
 }
 
-async fn shorten(Json(body): Json<Request>) -> String {
-    format!("Got URL: {}", body.url)
+async fn shorten(State(db): State<DB>, Json(body): Json<Request>) -> String {
+    let id = nanoid::nanoid!(6);
+
+    let mut map = db.lock().unwrap();
+    map.insert(id.clone(), body.url.clone());
+
+    format!("Short Link : https://127.0.0.1:3000/{}", id)
 }
 
-// fn main() {
-//     let mut url_id: HashMap<String, String> = HashMap::new();
-//     let id = nanoid::nanoid!(6);
-//     println!("Nano ID: {}", id);
+// curl -X POST http://127.0.0.1:3000/shorten -H "Content-Type: application/json" -d "{\"url\":\"https://youtube.com\"}"
+// curl -L http://127.0.0.1:3000/aB92xQ
 
-//     url_id.insert(id.to_string(), "https//youtube.com".to_string());
 
-//     println!("{:?}", url_id)
-// }
+// curl               → send request tool
+// -X POST            → use POST method
+// /shorten           → your Rust route
+// -H JSON header     → tells server you're sending JSON
+// -d data            → actual body (your URL)
 
 // --- Plan ---
 //1. Send URL link
