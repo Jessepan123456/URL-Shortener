@@ -1,10 +1,11 @@
-mod url;
+mod files;
 mod test;
+mod url;
 
 use axum::{
-    Json, Router,
+    Form, Router,
     extract::{Path, State},
-    response::Redirect,
+    response::{Html, Redirect},
     routing::{get, post},
     serve,
 };
@@ -24,21 +25,46 @@ type DB = Arc<Mutex<HashMap<String, String>>>;
 async fn main() {
     //Makes the website server
     //Our Server Hashmap
-    let db: DB = Arc::new(Mutex::new(HashMap::new()));
+
+    //Load
+    let db: DB = Arc::new(Mutex::new(files::load()));
 
     let app = Router::new()
+        .route("/", get(home))
         .route("/:id", get(redirect))
         .route("/shorten", post(shorten))
         .with_state(db);
 
     //Listen for what server it makes
-    let listener = TcpListener::bind("127.0.0.1:3000").await.unwrap();
+    let listener = match TcpListener::bind("127.0.0.1:3000").await {
+        Ok(l) => l,
+        Err(e) => {
+            println!("Failed to Listen: {}", e);
+            return;
+        }
+    };
 
     println!("Server running on http://127.0.0.1:3000");
 
-    serve(listener, app).await.unwrap();
+    if let Err(e) = serve(listener, app).await {
+        println!("Failed to Start the Server: {}", e)
+    }
 }
 
+async fn home() -> Html<&'static str> {
+    Html(
+        r#"
+        <h1 style="text-align: center;">URL Shortener</h1>
+
+        <form action="/shorten" method ="post" style="text-align: center;">
+            <input type="text" name="url" placeholder="Enter URL">
+            <button type="submit">Shorten</button>
+        </form>
+    "#,
+    )
+}
+
+//Redirect to the Link for terminal
 async fn redirect(State(db): State<DB>, Path(id): Path<String>) -> Redirect {
     let map = db.lock().unwrap();
     if let Some(link) = map.get(&id) {
@@ -48,22 +74,43 @@ async fn redirect(State(db): State<DB>, Path(id): Path<String>) -> Redirect {
     }
 }
 
-async fn shorten(State(db): State<DB>, Json(body): Json<Request>) -> String {
+//Shorten the link
+async fn shorten(State(db): State<DB>, Form(body): Form<Request>) -> Html<String> {
     if body.url.is_empty() {
-        "Empty URL Founded".to_string()
+        Html(format!(
+            r#"
+            <h1 style="text-align: center;">Invalid URL Link</h1>
+        "#
+        ))
     } else if !url::is_valid_url(&body.url) {
-        "Invalid URL Link".to_string()
+        Html(format!(
+            r#"
+            <h1 style="text-align: center;">Invalid URL Link</h1>
+        "#
+        ))
     } else {
         let mut id: String = String::new();
         let mut map = db.lock().unwrap();
-
         //New Link
         if !url::dup_url(&mut map, &mut id, &body.url) {
             id = nanoid::nanoid!(6);
             map.insert(id.clone(), body.url.clone());
+
+            //Save
+            files::save(&*map);
         }
 
-        format!("Short Link : http://127.0.0.1:3000/{}", id)
+        Html(format!(
+            r#"
+            <h1 style="text-align: center;">Shortened URL</h1>
+
+            <a href="http://127.0.0.1:3000/{0}"
+                style="display: block; text-align: center;">
+                http://127.0.0.1:3000/{0}
+            </a>
+        "#,
+            id
+        ))
     }
 }
 

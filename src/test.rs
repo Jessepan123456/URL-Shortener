@@ -1,8 +1,6 @@
-use crate::url::{is_valid_url, test_dup_url};
-
 #[cfg(test)]
 mod tests {
-    use super::*;
+    use crate::url::{is_valid_url, test_dup_url};
     use std::collections::HashMap;
 
     #[test]
